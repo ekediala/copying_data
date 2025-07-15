@@ -1,74 +1,104 @@
 package main
 
 import (
-	"bytes"
-	"context"
 	"flag"
 	"fmt"
 	"io"
 	"log"
-	"net/http"
-	"os/signal"
-	"syscall"
-	"time"
+	"os"
+	"runtime/pprof"
+	"sync"
 )
 
-func readBodyIoReadAll(r io.Reader) ([]byte, error) {
-	return io.ReadAll(r)
+var bufBool = sync.Pool{
+	New: func() any {
+		return make([]byte, 32*1024)
+	},
 }
 
-func readBodyBuffered(r io.Reader) ([]byte, error) {
-	var buf bytes.Buffer
-	_, err := io.Copy(&buf, r)
+func readBodyIoReadAll(r io.Reader, w io.Writer) error {
+	b, err := io.ReadAll(r)
 	if err != nil {
-		return nil, fmt.Errorf("reading data: %w", err)
+		return fmt.Errorf("reading data: %w", err)
 	}
-	return buf.Bytes(), nil
+
+	if _, err := w.Write(b); err != nil {
+		return fmt.Errorf("writing data data: %w", err)
+	}
+
+	return nil
+}
+
+func readBodyBufferedPool(r io.Reader, w io.Writer) error {
+	buf := bufBool.Get().([]byte)
+	defer bufBool.Put(buf)
+
+	_, err := io.CopyBuffer(w, r, buf)
+	if err != nil {
+		return fmt.Errorf("reading data: %w", err)
+	}
+	return nil
+}
+
+func readBodyBuffered(r io.Reader, w io.Writer) error {
+	_, err := io.Copy(w, r)
+	if err != nil {
+		return fmt.Errorf("reading data: %w", err)
+	}
+	return nil
 }
 
 func main() {
-	ctx, cancel := signal.NotifyContext(
-		context.Background(),
-		syscall.SIGINT,
-		syscall.SIGHUP,
-		syscall.SIGTERM,
-		syscall.SIGQUIT,
-	)
-	defer cancel()
-
 	var useBuffer bool
+	var useSyncPool bool
+	var memprofile string
+
 	flag.BoolVar(&useBuffer, "b", false, "should we stream response body?")
+	flag.BoolVar(&useSyncPool, "c", false, "should we use copy buffer?")
+	flag.StringVar(&memprofile, "memprofile", "", "write memory profile to file")
+	flag.Parse()
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/", nil)
+	if memprofile != "" {
+		f, err := os.Create(memprofile)
+		if err != nil {
+			log.Fatal("could not create memory profile: ", err)
+		}
+		defer f.Close()
+		defer pprof.WriteHeapProfile(f)
+	}
+
+	f, err := os.Open("SmartRaise_Dash.jpg")
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer f.Close()
 
-	client := http.Client{
-		Timeout: time.Minute,
-	}
-
-	res, err := client.Do(req)
+	w, err := os.Create("test.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	defer res.Body.Close()
+	defer w.Close()
+	defer os.Remove("test.txt")
 
 	if useBuffer {
-		b, err := readBodyIoReadAll(res.Body)
+		err = readBodyBuffered(f, w)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println(string(b))
 		return
 	}
 
-	b, err := readBodyBuffered(res.Body)
+	if useSyncPool {
+		err = readBodyBufferedPool(f, w)
+		if err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
+	err = readBodyIoReadAll(f, w)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println(string(b))
 
 }
