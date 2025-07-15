@@ -22,6 +22,7 @@ func readBodyIoReadAll(r io.Reader, w io.Writer) error {
 		return fmt.Errorf("reading data: %w", err)
 	}
 
+	// process data. we just use a write here as a placeholder
 	if _, err := w.Write(b); err != nil {
 		return fmt.Errorf("writing data data: %w", err)
 	}
