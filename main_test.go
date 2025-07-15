@@ -1,49 +1,55 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
+	"os"
 	"testing"
 )
 
 func TestReadWithIoReadAll(t *testing.T) {
-	data := make([]byte, 10000)
-	r := bytes.NewReader(data)
-	if _, err := readBodyIoReadAll(r); err != nil {
+	f, err := os.Open("SmartRaise_Dash.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := readBodyIoReadAll(f); err != nil {
 		t.Fatalf("expected error to be nil, got %v", err)
 	}
 }
 
 func TestReadWithBuffer(t *testing.T) {
-	data := make([]byte, 10000)
-	r := bytes.NewReader(data)
-	if _, err := readBodyBuffered(r); err != nil {
+	f, err := os.Open("SmartRaise_Dash.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readBodyBuffered(f); err != nil {
 		t.Fatalf("expected error to be nil, got %v", err)
 	}
 }
 
 func BenchmarkReadMethods(b *testing.B) {
-	sizes := []int{1024, 10000, 100000, 1000000}
+	fileNames := []string{"SmartRaise_Dash.jpg", "README.md"}
 
-	for _, size := range sizes {
-		data := make([]byte, size)
+	for _, fileName := range fileNames {
+		data, err := os.Open(fileName)
+		if err != nil {
+			b.Fatal(err)
+		}
 
-		b.Run(fmt.Sprintf("IoReadAll_%d", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("IoReadAll_%s", fileName), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				r := bytes.NewReader(data)
-				_, err := readBodyIoReadAll(r)
+				_, err := readBodyIoReadAll(data)
 				if err != nil {
 					b.Fatal(err)
 				}
 			}
 		})
 
-		b.Run(fmt.Sprintf("Buffered_%d", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("Buffered_%s", fileName), func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {
-				r := bytes.NewReader(data)
-				_, err := readBodyBuffered(r)
+				_, err := readBodyBuffered(data)
 				if err != nil {
 					b.Fatal(err)
 				}
